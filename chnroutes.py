@@ -1,4 +1,8 @@
 #!/usr/bin/env python
+#
+# usage: python chnroutes.py -p mac
+# site: https://github.com/sunrisela/chnroutes
+#
 
 import argparse
 import math
@@ -7,6 +11,7 @@ import re
 import subprocess
 import sys
 import urllib2
+import time
 
 def generate_ovpn(_):
     results = fetch_ip_data()
@@ -114,6 +119,10 @@ def generate_mac(_):
 
     upscript_header = """\
 #!/bin/sh
+# Generate on %s by Joshua
+
+/sbin/route add -net 192.168.2.0/24   -interface ppp0
+
 export PATH="/bin:/sbin:/usr/sbin:/usr/bin"
 
 OLDGW=`netstat -nr | grep '^default' | grep -v 'ppp' | sed 's/default *\\([0-9\.]*\\) .*/\\1/'`
@@ -122,11 +131,14 @@ if [ ! -e /tmp/pptp_oldgw ]; then
     echo "${OLDGW}" > /tmp/pptp_oldgw
 fi
 
-dscacheutil -flushcache
-"""
+""" % ( time.strftime("%Y-%m-%d %H:%M", time.localtime()) )
 
     downscript_header = """\
 #!/bin/sh
+# Generate on %s by Joshua
+
+/sbin/route delete -net 192.168.2.0/24   -interface ppp0
+
 export PATH="/bin:/sbin:/usr/sbin:/usr/bin"
 
 if [ ! -e /tmp/pptp_oldgw ]; then
@@ -134,6 +146,26 @@ if [ ! -e /tmp/pptp_oldgw ]; then
 fi
 
 OLDGW=`cat /tmp/pptp_oldgw`
+
+""" % ( time.strftime("%Y-%m-%d %H:%M", time.localtime()) )
+
+    upscript_footer = """\
+
+PRODUCT_VERSION=`/usr/bin/sw_vers -productVersion | cut -f 1-2 -d .`
+
+if [ "$PRODUCT_VERSION" = "10.10" ] ; then
+  dscacheutil -flushcache
+  discoveryutil udnsflushcaches
+elif [ "$PRODUCT_VERSION" = "10.9" ] ; then
+  dscacheutil -flushcache
+  killall -HUP mDNSResponder
+elif [ "$PRODUCT_VERSION" = "10.8" ] ; then
+  killall -HUP mDNSResponder
+elif [ "$PRODUCT_VERSION" = "10.7" ] ; then
+  killall -HUP mDNSResponder
+else
+  dscacheutil -flushcache
+fi
 """
 
     upfile = open('ip-up','w')
@@ -146,6 +178,7 @@ OLDGW=`cat /tmp/pptp_oldgw`
         upfile.write('route add %s/%s "${OLDGW}"\n' % (ip, mask))
         downfile.write('route delete %s/%s ${OLDGW}\n' % (ip, mask))
 
+    upfile.write(upscript_footer)
     downfile.write('\n\nrm /tmp/pptp_oldgw\n')
 
     upfile.close()
